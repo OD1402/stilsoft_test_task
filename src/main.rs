@@ -9,11 +9,25 @@ use std::env;
 use std::fs::File;
 use std::process;
 use std::sync::Arc;
-use tokio::fs;
 // use tokio::sync::Mutex;
+use clap::Parser;
+
+use tokio::fs;
 use tokio::sync::Semaphore;
 use tokio::task;
 use tokio::time::Duration;
+
+#[derive(Parser, Debug)]
+struct Args {
+    #[clap(long, default_value = "4")]
+    max_count_request: usize,
+    #[clap(long, default_value = "5")]
+    max_count_seconds: u64,
+    #[clap(long, default_value = "false")]
+    clear_db_data: bool,
+    #[clap(long, use_value_delimiter = true)]
+    source_urls: Vec<String>,
+}
 
 #[derive(Deserialize)]
 struct Source {
@@ -22,12 +36,24 @@ struct Source {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let args: Vec<String> = env::args().collect();
+    let Args {
+        max_count_request,
+        max_count_seconds,
+        clear_db_data,
+        source_urls,
+    } = Args::parse();
+
+    println!("max_count_request {}", max_count_request);
+    println!("max_count_seconds {}", max_count_seconds);
+    println!("clear_db_data {}", clear_db_data);
+    println!("source_urls {:#?}", source_urls);
+
+    // let args: Vec<String> = env::args().collect();
     let mut urls: Vec<String> = vec![];
     let file_path = "source.json";
 
-    if args.len() > 1 {
-        urls = args[1..].to_vec();
+    if source_urls.len() > 0 {
+        urls = source_urls[0..].to_vec();
     } else {
         println!(
             "Не получили аргументы командной строки, попробуем прочитать список урлов из файла {}\n", file_path
@@ -65,18 +91,18 @@ async fn main() -> Result<()> {
 
     println!("Список URL для обработки {:#?}:", urls);
 
-    ////////////////////////////////////
-    // удаление БД, раскомментировать, если надо сбросить все данные
-    // use tokio::fs::remove_dir_all;
-    // let db: Db = sled::open("db_result")?;
-    // drop(db);
-    // remove_dir_all("db_result").await?;
-    ////////////////////////////////////
+    // зачищаем БД с ранее сохраненными результатами, если передачи параметр clear_db_data
+    if clear_db_data {
+        use tokio::fs::remove_dir_all;
+        let db: Db = sled::open("db_result")?;
+        drop(db);
+        remove_dir_all("db_result").await?;
+    }
 
     let db: Db = sled::open("db_result")?;
 
     let client = Arc::new(Client::new());
-    let semaphore = Arc::new(Semaphore::new(5)); // 5 одновременных запросов, TODO: вынести в конфиг
+    let semaphore = Arc::new(Semaphore::new(max_count_request)); // одновременных запросов
 
     let mut responses = vec![];
     let results: Arc<std::sync::Mutex<HashMap<String, usize>>> =
@@ -100,7 +126,7 @@ async fn main() -> Result<()> {
                 }
                 None => {
                     // нет записи в БД, скачаем данные
-                    match download_and_count_first_line(&client, &url).await {
+                    match download_and_count_first_line(&client, &url, max_count_seconds).await {
                         Ok(value) => {
                             results_clone.lock().unwrap().insert(url.clone(), value);
 
@@ -161,10 +187,14 @@ async fn save_to_db(db: &Db, url: &str, value: usize) -> Result<()> {
     })
 }
 
-async fn download_and_count_first_line(client: &Arc<Client>, url: &str) -> Result<usize> {
+async fn download_and_count_first_line(
+    client: &Arc<Client>,
+    url: &str,
+    max_count_seconds: u64,
+) -> Result<usize> {
     let response = client
         .get(url)
-        .timeout(Duration::from_secs(5)) // Пытаемся скачать данные максимум 5 секунд. TODO: вынести в конфиг
+        .timeout(Duration::from_secs(max_count_seconds)) // Пытаемся скачать данные максимум max_count_seconds секунд
         .send()
         .await
         .map_err(|e| {
