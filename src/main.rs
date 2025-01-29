@@ -2,20 +2,26 @@ use anyhow::{Context, Result};
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::json;
+
 use sled::Db;
+
 use std::collections::HashMap;
 use std::collections::HashSet;
-// use std::env;
 use std::fs::File;
 use std::process;
 use std::sync::Arc;
-// use tokio::sync::Mutex;
+
 use clap::Parser;
 
 use tokio::fs;
 use tokio::sync::Semaphore;
 use tokio::task;
 use tokio::time::Duration;
+
+use sha2::{Digest, Sha256};
+
+mod db1;
+mod server;
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -27,6 +33,8 @@ struct Args {
     clear_db_data: bool,
     #[clap(long, use_value_delimiter = true)]
     source_urls: Vec<String>,
+    #[clap(long, default_value = "false")]
+    server: bool,
 }
 
 #[derive(Deserialize)]
@@ -41,14 +49,17 @@ async fn main() -> Result<()> {
         max_count_seconds,
         clear_db_data,
         source_urls,
+        server,
     } = Args::parse();
 
-    println!("max_count_request {}", max_count_request);
-    println!("max_count_seconds {}", max_count_seconds);
-    println!("clear_db_data {}", clear_db_data);
-    println!("source_urls {:#?}", source_urls);
 
-    // let args: Vec<String> = env::args().collect();
+    /////////////////////////////////
+    if server {
+        use crate::server::server_start;
+        server_start().await;
+    }
+    /////////////////////////////////
+
     let mut urls: Vec<String> = vec![];
     let file_path = "source.json";
 
@@ -89,7 +100,7 @@ async fn main() -> Result<()> {
     let unique_urls: HashSet<String> = urls.clone().into_iter().collect();
     let urls: Vec<String> = unique_urls.into_iter().collect();
 
-    println!("Список URL для обработки {:#?}:", urls);
+    println!("Список URL для обработки {:#?}:\n", urls);
 
     // зачищаем БД с ранее сохраненными результатами, если передачи параметр clear_db_data
     if clear_db_data {
@@ -118,9 +129,18 @@ async fn main() -> Result<()> {
         let response = task::spawn(async move {
             let _permit = semaphore_clone.acquire().await.unwrap(); // acquire запрашивает разрешение на доступ к ресурсу управляемому семафором
 
-            match get_from_db(&db_clone, &url).await {
+            let mut hasher = Sha256::new();
+            hasher.update(url.to_string());
+            let finalize = hasher.finalize();
+            let hex_string = hex::encode(finalize);
+            let url_hash: &str = &hex_string;
+
+            match get_from_db(&db_clone, &url_hash).await {
                 Some(value) => {
-                    println!("Получили значение из БД {}: {}", &url, value);
+                    println!(
+                        "Получили значение из БД: {} \n{} {}\n",
+                        &url, &url_hash, value
+                    );
                     // есть запись в БД, не будем скачивать данные
                     results_clone.lock().unwrap().insert(url.clone(), value);
                 }
@@ -130,8 +150,11 @@ async fn main() -> Result<()> {
                         Ok(value) => {
                             results_clone.lock().unwrap().insert(url.clone(), value);
 
-                            match save_to_db(&db_clone, &url, value).await {
-                                Ok(_) => println!("Записали значение в БД {} {}", &url, value),
+                            match save_to_db(&db_clone, &url_hash, value).await {
+                                Ok(_) => println!(
+                                    "Записали значение в БД: {} \n{} {}\n",
+                                    &url, &url_hash, value
+                                ),
                                 Err(e) => eprintln!("Ошибка при сохранении в БД: {}", e),
                             }
                         }
@@ -166,6 +189,21 @@ async fn main() -> Result<()> {
 }
 
 async fn get_from_db(db: &Db, url: &str) -> Option<usize> {
+    // Итерация по всем ключам // ОТЛАДКА
+    // for result in db.iter() {
+    //     match result {
+    //         Ok((key, value)) => {
+    //             // Преобразуем ключ и значение в строки для вывода
+    //             let key_str = String::from_utf8_lossy(&key);
+    //             let value_str = String::from_utf8_lossy(&value);
+    //             println!("Key: {}, Value: {}", key_str, value_str);
+    //         }
+    //         Err(e) => {
+    //             eprintln!("Ошибка при чтении записи из базы данных: {:?}", e);
+    //         }
+    //     }
+    // }
+
     // block_in_place синхронный вызов в асинхронном контексте
     tokio::task::block_in_place(|| match db.get(url) {
         Ok(Some(value)) => {
@@ -200,7 +238,6 @@ async fn download_and_count_first_line(
         .map_err(|e| {
             anyhow::anyhow!("Не удалось скачать файл за 5 секунд для URL {}: {}", url, e)
         })?;
-    // .with_context(|| format!("Failed to send request to {}", url))?; // Обработка ошибок запроса
 
     match response.status() {
         reqwest::StatusCode::OK => {
@@ -244,6 +281,7 @@ mod tests {
         let result = download_and_count_first_line(
             &client,
             &format!("{}{}", mockito::server_url(), "/test_url"),
+            5,
         )
         .await;
 
@@ -262,6 +300,7 @@ mod tests {
         let result = download_and_count_first_line(
             &client,
             &format!("{}{}", mockito::server_url(), "/test_url"),
+            5,
         )
         .await;
 
