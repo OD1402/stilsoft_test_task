@@ -5,7 +5,7 @@ use serde_json::json;
 use sled::Db;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::env;
+// use std::env;
 use std::fs::File;
 use std::process;
 use std::sync::Arc;
@@ -19,7 +19,7 @@ use tokio::time::Duration;
 
 #[derive(Parser, Debug)]
 struct Args {
-    #[clap(long, default_value = "4")]
+    #[clap(long, default_value = "5")]
     max_count_request: usize,
     #[clap(long, default_value = "5")]
     max_count_seconds: u64,
