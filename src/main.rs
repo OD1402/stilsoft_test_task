@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use reqwest::Client;
-use serde::Deserialize;
+// use serde::Deserialize;
 use serde_json::json;
 
 use sled::Db;
@@ -37,11 +37,6 @@ struct Args {
     server: bool,
 }
 
-#[derive(Deserialize)]
-struct Source {
-    source_urls: Vec<String>,
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let Args {
@@ -51,7 +46,6 @@ async fn main() -> Result<()> {
         source_urls,
         server,
     } = Args::parse();
-
 
     /////////////////////////////////
     if server {
@@ -77,7 +71,7 @@ async fn main() -> Result<()> {
                     file_path, err
                 );
             }
-            Ok(content) => match serde_json::from_str::<Source>(&content) {
+            Ok(content) => match serde_json::from_str::<Vec<String>>(&content) {
                 Err(err) => {
                     eprintln!(
                         "Невалидный JSON, возможно файл {} пустой \n{}\n",
@@ -85,7 +79,7 @@ async fn main() -> Result<()> {
                     );
                 }
                 Ok(json) => {
-                    urls = json.source_urls;
+                    urls = json;
                 }
             },
         }
@@ -146,7 +140,7 @@ async fn main() -> Result<()> {
                 }
                 None => {
                     // нет записи в БД, скачаем данные
-                    match download_and_count_first_line(&client, &url, max_count_seconds).await {
+                    match download_and_line_count(&client, &url, max_count_seconds).await {
                         Ok(value) => {
                             results_clone.lock().unwrap().insert(url.clone(), value);
 
@@ -188,24 +182,9 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn get_from_db(db: &Db, url: &str) -> Option<usize> {
-    // Итерация по всем ключам // ОТЛАДКА
-    // for result in db.iter() {
-    //     match result {
-    //         Ok((key, value)) => {
-    //             // Преобразуем ключ и значение в строки для вывода
-    //             let key_str = String::from_utf8_lossy(&key);
-    //             let value_str = String::from_utf8_lossy(&value);
-    //             println!("Key: {}, Value: {}", key_str, value_str);
-    //         }
-    //         Err(e) => {
-    //             eprintln!("Ошибка при чтении записи из базы данных: {:?}", e);
-    //         }
-    //     }
-    // }
 
-    // block_in_place синхронный вызов в асинхронном контексте
-    tokio::task::block_in_place(|| match db.get(url) {
+async fn get_from_db(db: &Db, url: &str) -> Option<usize> {
+    match db.get(url) {
         Ok(Some(value)) => {
             let string_value = String::from_utf8(value.to_vec()).ok()?;
             string_value.parse::<usize>().ok()
@@ -215,17 +194,16 @@ async fn get_from_db(db: &Db, url: &str) -> Option<usize> {
             eprintln!("Ошибка при получении данных из БД");
             None
         }
-    })
+    }
+
 }
 
 async fn save_to_db(db: &Db, url: &str, value: usize) -> Result<()> {
-    task::block_in_place(move || {
-        db.insert(url, value.to_string().as_bytes())?;
-        Ok(())
-    })
+    db.insert(url, value.to_string().as_bytes())?;
+    Ok(())
 }
 
-async fn download_and_count_first_line(
+async fn download_and_line_count(
     client: &Arc<Client>,
     url: &str,
     max_count_seconds: u64,
@@ -246,9 +224,9 @@ async fn download_and_count_first_line(
                 .await
                 .with_context(|| format!("Failed to read response text from {}", url))?;
 
-            // Сколько символов в первой строке
-            let first_line_length = text.lines().next().map_or(0, |line| line.len());
-            Ok(first_line_length)
+            // Сколько строк на странице
+            let line_count = text.lines().count();
+            Ok(line_count)
         }
         // reqwest::StatusCode::NOT_FOUND => {
         //     Err(anyhow::anyhow!("404 Not Found for URL: {}", url))
@@ -256,7 +234,7 @@ async fn download_and_count_first_line(
         _ => {
             // если код не 200, пропускаем ссылку
             Err(anyhow::anyhow!(
-                "Status code: '{}' for URL: {}",
+                "Status code: '{}' for URL: {}\n",
                 response.status(),
                 url
             ))
@@ -278,7 +256,7 @@ mod tests {
             .create();
 
         let client = Arc::new(Client::new());
-        let result = download_and_count_first_line(
+        let result = download_and_line_count(
             &client,
             &format!("{}{}", mockito::server_url(), "/test_url"),
             5,
@@ -297,7 +275,7 @@ mod tests {
             .create();
 
         let client = Arc::new(Client::new());
-        let result = download_and_count_first_line(
+        let result = download_and_line_count(
             &client,
             &format!("{}{}", mockito::server_url(), "/test_url"),
             5,
