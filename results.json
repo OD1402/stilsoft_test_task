@@ -1,7 +1,38 @@
 {
-  "http://base.tsnnedv.ru/Publisher/sob/3?region=3": 2,
-  "http://xapi.ru/xml/L0q0n0d0m2j0m0r0k04231z232k1u272h1s222h222k250s060c0k0e0v0p120w1q1b1g1a153c393j1c3j1c1j.xml": 1013,
-  "https://example.com": 46,
-  "https://www.cian.ru/metros-moscow-v2.xml": 527,
-  "https://www.rust-lang.org": 413
+  "http://base.tsnnedv.ru/Publisher/sob/3?region=3": {
+    "Ok": [
+      2,
+      "2025-02-02T18:26:13.539740964Z"
+    ]
+  },
+  "http://xapi.ru/xml/L0q0n0d0m2j0m0r0k04231z232k1u272h1s222h222k250s060c0k0e0v0p120w1q1b1g1a153c393j1c3j1c1j.xml": {
+    "Err": "Не удалось скачать файл за 2 секунд для URL http://xapi.ru/xml/L0q0n0d0m2j0m0r0k04231z232k1u272h1s222h222k250s060c0k0e0v0p120w1q1b1g1a153c393j1c3j1c1j.xml: error sending request for url (http://xapi.ru/xml/L0q0n0d0m2j0m0r0k04231z232k1u272h1s222h222k250s060c0k0e0v0p120w1q1b1g1a153c393j1c3j1c1j.xml)"
+  },
+  "https://crates.io/crates/actix-files": {
+    "Err": "Status code: '403 Forbidden' for URL: https://crates.io/crates/actix-files\n"
+  },
+  "https://example.com": {
+    "Ok": [
+      46,
+      "2025-02-02T18:26:13.539959674Z"
+    ]
+  },
+  "https://www.cian.ru/metros-moscow-v2.xml": {
+    "Ok": [
+      527,
+      "2025-02-02T18:26:13.539612720Z"
+    ]
+  },
+  "https://www.rust-lang.org": {
+    "Ok": [
+      413,
+      "2025-02-02T18:26:14.057690062Z"
+    ]
+  },
+  "https://www.youtube.com/?app=desktop&hl=ru": {
+    "Err": "Не удалось скачать файл за 2 секунд для URL https://www.youtube.com/?app=desktop&hl=ru: error sending request for url (https://www.youtube.com/?app=desktop&hl=ru)"
+  },
+  "https://zipal.ru/export/agency/8562/YANDEX": {
+    "Err": "Status code: '404 Not Found' for URL: https://zipal.ru/export/agency/8562/YANDEX\n"
+  }
 }
