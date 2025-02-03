@@ -2,13 +2,13 @@
 
 stilsoft_test_task выполняет следующие действия:
 1. получает на вход для обработки список URL
-2. берет в обработку одновременно 5 ссылок
+2. берет в обработку одновременно несколько ссылок
 3. проверяет для каждой ссылки - а нет ли уже сохраненного результата в БД sled db_result,<br/>
     * если есть,
       - берет результат из БД<br/>
     * если нет,
       - скачивает содержимое страниц в асинхронном режиме (если не получается скачать данные, ссылка пропускается и программа берет следующую ссылку)
-      - считает количество символов в первой строке
+      - считает количество строк на странице
       - складывает полученные результаты в БД sled db_result
 4. выводит результат обработки на экран
 5. записывает результат обработки в файл `results.json`
@@ -20,15 +20,39 @@ stilsoft_test_task выполняет следующие действия:
 
 ### Варианты запуска
 
-1. С передачей ссылок через файл
-     * Указать список ссылок, которые нужно обработать, в файл `~stilsoft_test_task/source.json`
-     * Запустить команду `cargo run`
-       
-2. С передачей ссылок через командную строку
-     * Запустить команду, указав ссылки для обработки через пробел
-       <br/>`cargo run -- https://example.com https://zipal.ru/export/agency/8562/YANDEX https://www.rust-lang.org`
-       
-<br/>Если при запуске указаны ссылки как аргументы командной строки, то ссылки в файле `~stilsoft_test_task/source.json` будут проигнорированы.
+1. Режим Cli - через аргументы командной строки
+     *  Аргументы, которые можно передать:
+        * Список url
+        * `--max-requests-at-once` - количество ссылок, которые нужно обрабатывать одновременно
+        * `--fetch-timeout-secs` - количество секунд, на протяжении которых мы будем пробовать скачать данные по ссылке (если не получилось скачать за "fetch-timeout-secs" секунд, то пропускаем эту ссылку и берем следующую)
+        * `--clear-db` - зачистить все результаты в БД перед обработкой ссылок
+   * Примеры запуска:
+     *  Обработка ссылок из файла  <br/>`cargo run -- cli urls.txt`
+     *  Обработка ссылок из аргументов командной строки  <br/>`cargo run -- cli https://example.com https://www.rust-lang.org`
+     *  Обработка ссылок из файла с попыткой скачать каждую ссылку максимум за 2 секунды  <br/>`cargo run -- cli urls.txt -- --max-requests-at-once 2` 
+
+2. Режим Server - API
+   * Запуск сервера  <br/>`cargo run -- server`
+
+   * Запрос на получение данных из БД:
+     <br/>`curl -w "\n" http://localhost:3000/check?url=https://example.com`
+     <br/>Ответ: <br/>
+     ```
+      {
+         at: "2025-02-02T22:49:42.454704882Z",
+         line_count: 46,
+         url: "https://example.com"
+      }
+      ```
+
+   * Запрос на обработку данных: 
+      <br/>`curl -w "\n" http://localhost:3000/fetch_urls \
+      -H "Content-Type: application/json" \
+      -d '{"urls": ["https://www.example.com", "https://www.rust-lang.org"]}'`
+      <br/>Ответ: <br/>
+      ```
+         {"https://www.example.com":{"Ok":[46,"2025-02-02T22:55:26.464939760Z"]},"https://www.rust-lang.org":{"Ok":[413,"2025-02-02T22:49:42.454623622Z"]}}
+      ```
 
 ### Вывод результатов обработки
 
@@ -37,12 +61,24 @@ stilsoft_test_task выполняет следующие действия:
 ====================
 Обработка завершена. 
 results: {
-    "https://www.rust-lang.org": 15,
-    "https://www.youtube.com/?app=desktop&hl=ru": 1285,
-    "https://www.cian.ru/metros-moscow-v2.xml": 38,
-    "https://example.com": 15,
-    "http://xapi.ru/xml/L0q0n0d0m2j0m0r0k04231z232k1u272h1s222h222k250s060c0k0e0v0p120w1q1b1g1a153c393j1c3j1c1j.xml": 3850,
-    "http://base.tsnnedv.ru/Publisher/sob/3?region=3": 38,
+    "https://www.youtube.com/?app=desktop&hl=ru": Ok(
+        (
+            23,
+            2025-02-02T22:49:42.454532029Z,
+        ),
+    ),
+    "https://zipal.ru/export/agency/8562/YANDEX": Err(
+        "Status code: '404 Not Found' for URL: https://zipal.ru/export/agency/8562/YANDEX\n",
+    ),
+    "https://crates.io/crates/actix-files": Err(
+        "Status code: '403 Forbidden' for URL: https://crates.io/crates/actix-files\n",
+    ),
+    "https://www.rust-lang.org": Ok(
+        (
+            413,
+            2025-02-02T22:49:42.454623622Z,
+        ),
+    ),
 }
 ====================
 ```
